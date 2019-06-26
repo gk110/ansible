@@ -1,0 +1,13 @@
+---
+- name: Jenkins creation
+  hosts: localhost
+  connection: local
+  tasks:
+    - name: creation
+      jenkins_job:
+        name: "{{ job_name }}"
+        url: http://13.127.222.47:8080/
+        state: present
+        token: 110130a07cefcc1e350b8231a2d7865f5e
+        user: jenkins
+        config: "{{ lookup('file', 'templates/test.xml') }}"
