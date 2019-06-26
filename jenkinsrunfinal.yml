@@ -1,0 +1,90 @@
+---
+- name: Jenkins creation
+  hosts: localhost
+  connection: local
+  tasks:
+    - name: Get Jenkins crumb
+      uri:
+       user: jenkins
+       password: warlock123$
+       force_basic_auth: yes
+       url: "http://13.127.222.47:8080/crumbIssuer/api/json"
+       return_content: yes
+      register: crumb_token
+      until: crumb_token.content.find('Please wait while Jenkins is getting ready') == -1
+      retries: 10
+      delay: 5
+
+    - name: Set crumb token
+      set_fact:
+        crumb: "{{ crumb_token.json.crumbRequestField }}={{ crumb_token.json.crumb }}"
+
+    - name: Queue build of a project in Jenkins
+      uri:
+       url: http://13.127.222.47:8080/job/{{ job_name }}/build?token=build.default=on&{{ crumb }}
+       method: POST
+       user: jenkins
+       password: warlock123$
+       return_content: yes
+       force_basic_auth: true
+       status_code: 201
+      register: job_status
+
+    - name: query jenkins job queue to see if it has been able to start a build
+      block:
+        - name: poll jenkins JOB QUEUE every 3 seconds for configured number of attempts to get the number from the job queue
+          uri:
+             force_basic_auth: yes
+             headers:
+               Content-Type: "application/json"
+             method: GET
+             password: warlock123$
+             return_content: yes
+             timeout: 3
+             url: "{{job_status.location}}api/json"
+             user: jenkins
+          register: poll_result
+          until: poll_result|json_query('json.executable.number')|default(0)|int > 0
+          retries: 10
+          delay: 10
+
+      rescue:
+        - name: Fail because we could not query the jenkins job queue successfully
+          fail:
+            msg: "Error, could not query the jenkins job queue"
+
+
+    - name: check for jenkins job success
+      block:
+        - name: show the build job url detected above
+          debug:
+           msg: "Build job is at [ http://13.127.222.47/job/{{ job_name }}/{{poll_result.json.executable.number}}/api/json ]"
+
+        - name: now poll jenkins JOB every 3 seconds for configured number of attempts to check if the job was actually successful
+          uri:
+           force_basic_auth: yes
+           headers:
+            Content-Type: "application/json"
+           method: GET
+           password: warlock123$
+           return_content: yes
+           timeout: 3
+           url: "http://13.127.222.47:8080/job/{{ job_name }}/{{poll_result.json.executable.number}}/api/json"
+           user: jenkins
+          register: build_job_result
+          until: build_job_result|json_query('json.result') == 'SUCCESS' or build_job_result|json_query('json.result') == 'FAILURE' or  build_job_result|json_query('json.result') == 'ABORTED'
+          retries: 100
+          delay: 10
+
+        - name: show the build job url detected above
+          debug:
+           msg: "Build job [ http://13.127.222.47:8080/job/{{ job_name }}/{{poll_result.json.executable.number}}/api/json ] reported [{{build_job_result|json_query('json.result')}}]"
+      rescue:
+
+        - name:
+          fail:
+            msg: "Build job failed"
+
+    - local_action: copy content="{{ build_job_result|json_query('json.result') }}" dest="{{ job_name }}"
+
+    - shell: sleep 10; rm "{{ job_name }}"
