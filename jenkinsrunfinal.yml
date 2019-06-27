@@ -21,7 +21,10 @@
 
     - name: Queue build of a project in Jenkins
       uri:
-       url: http://13.127.222.47:8080/job/{{ job_name }}/build?token=build.default=on&{{ crumb }}
+       body_format: form-urlencoded
+       body:
+       - [ Name, "{{ name }}" ]
+       url: http://13.127.222.47:8080/job/{{ job_name }}/buildWithParameters/build?token=build.default=on&{{ crumb }}
        method: POST
        user: jenkins
        password: warlock123$
