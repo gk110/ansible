@@ -1,0 +1,66 @@
+---
+- name: Jenkins creation
+  hosts: localhost
+  connection: local
+  vars:
+    A: "{{ jenkins_username }}"
+    B: "{{ jenkins_password }}"
+
+  tasks:
+    - name: Get Jenkins crumb
+      uri:
+       token: 11453ddd7a8ba85b3248bf05374cc7d40e
+       force_basic_auth: yes
+       url: "http://13.232.254.153:8080/crumbIssuer/api/json"
+       return_content: yes
+      register: crumb_token
+      until: crumb_token.content.find('Please wait while Jenkins is getting ready') == -1
+      retries: 10
+      delay: 5
+
+    - name: Set crumb token
+      set_fact:
+        crumb: "{{ crumb_token.json.crumbRequestField }}={{ crumb_token.json.crumb }}"
+
+    - name: Queue build of a project in Jenkins
+      uri:
+       body_format: raw
+       body: "{{ input }}"
+       header:
+         Content-Type: "application/x-www-form-urlencoded"
+       url: http://13.232.254.153:8080/job/Devops/job/{{ job_name }}/buildWithParameters?token=build.default=on&{{ crumb }}
+       method: POST
+       token: 11453ddd7a8ba85b3248bf05374cc7d40e
+       return_content: yes
+       force_basic_auth: true
+       status_code: 201
+      register: job_status
+
+    - name: check for jenkins job success
+      block:
+        - name: show the build job url detected above
+          debug:
+           msg: "Build job is at "
+
+        - name: now poll jenkins JOB every 3 seconds for configured number of attempts to check if the job was actually successful
+          uri:
+           force_basic_auth: yes
+           headers:
+            Content-Type: "application/xml"
+           method: GET
+           token: 11453ddd7a8ba85b3248bf05374cc7d40e
+           timeout: 3
+           url: "http://13.232.254.153:8080/job/Devops/job/{{ job_name }}/lastBuild/api/json?tree=result"
+          register: build_job_result
+
+        - debug:
+            msg: "{{ build_job_result.json.result }}"
+
+        - name: show the build job url detected above
+          debug:
+            var: "{{ build_job_result }}"
+      rescue:
+
+        - name:
+          fail:
+            msg: "Build job failed"
