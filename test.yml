@@ -11,7 +11,7 @@
       uri:
        token: 11453ddd7a8ba85b3248bf05374cc7d40e
        force_basic_auth: yes
-       url: "http://13.232.254.153:8080/crumbIssuer/api/json"
+       url: "http://13.127.63.250:8080/crumbIssuer/api/json"
        return_content: yes
       register: crumb_token
       until: crumb_token.content.find('Please wait while Jenkins is getting ready') == -1
@@ -24,17 +24,43 @@
 
     - name: Queue build of a project in Jenkins
       uri:
-       body_format: raw
+       body_format: json
        body: "{{ input }}"
        header:
          Content-Type: "application/x-www-form-urlencoded"
-       url: http://13.232.254.153:8080/job/Devops/job/{{ job_name }}/buildWithParameters?token=build.default=on&{{ crumb }}
+       url: http://13.127.63.250:8080/job/Devops/job/{{ job_name }}/buildWithParameters?token=build.default=on&{{ crumb }}
        method: POST
        token: 11453ddd7a8ba85b3248bf05374cc7d40e
        return_content: yes
        force_basic_auth: true
        status_code: 201
       register: job_status
+
+    - debug:
+        var: job_status
+
+    - name: query jenkins job queue to see if it has been able to start a build
+      block:
+        - name: poll jenkins JOB QUEUE every 3 seconds for configured number of attempts to get the number from the job queue
+          uri:
+             force_basic_auth: yes
+             headers:
+               Content-Type: "application/json"
+             method: GET
+             return_content: yes
+             timeout: 3
+             url: "{{job_status.location}}/api/json"
+             token: 11453ddd7a8ba85b3248bf05374cc7d40e
+          register: poll_result
+          until: poll_result.json.executable.number|default(0)|int > 0
+          retries: 10
+          delay: 10
+
+      rescue:
+        - name: Fail because we could not query the jenkins job queue successfully
+          fail:
+            msg: "Error, could not query the jenkins job queue"
+
 
     - name: check for jenkins job success
       block:
@@ -46,12 +72,15 @@
           uri:
            force_basic_auth: yes
            headers:
-            Content-Type: "application/xml"
+            Content-Type: "application/json"
            method: GET
            token: 11453ddd7a8ba85b3248bf05374cc7d40e
            timeout: 3
-           url: "http://13.232.254.153:8080/job/Devops/job/{{ job_name }}/lastBuild/api/json?tree=result"
+           url: "http://13.127.63.250:8080/job/Devops/job/{{ job_name }}/lastBuild/api/json?tree=result"
           register: build_job_result
+          until: build_job_result.json.result == 'SUCCESS'
+          retries: 100
+          delay: 10
 
         - debug:
             msg: "{{ build_job_result.json.result }}"
