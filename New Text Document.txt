@@ -1,0 +1,10 @@
+//JOBNAME1 JOB (ABC,DEF),'COMPILE',CLASS=A,NOTIFY=&SYSUID,
+//             MSGCLASS=X
+//****************************************
+//SORT     EXEC PGM=SORT
+//SORTIN   DD *
+HELLO WORLD
+//SORTOUT  DD SYSOUT=*
+//SYSIN    DD *
+OPTION COPY
+/*
